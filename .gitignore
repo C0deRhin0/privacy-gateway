@@ -1,6 +1,42 @@
+# Local environment files. Commit only reviewed, public templates.
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Private contextual maps. Public fictional examples belong in examples/.
+context-map*.json
+*contextual*map*.json
+!examples/**/*.json
+!tests/fixtures/**/*.json
+
+# Credentials and TLS material.
+*.key
+*.pem
+*.crt
+*.cer
+*.p12
+*.pfx
+*.jks
+*.keystore
+
+# This checkout also hosts an operator's live deployment. Keep its installed-unit
+# source copies local; publish only deploy/systemd/privacy-gateway-portable.service.
+/deploy/systemd/privacy-gateway.service
+/deploy/systemd/hermes-gateway-*-zz-privacy-gateway.conf
+
+# Python environments, caches, build products, and local runtime output.
 .venv/
 .pytest_cache/
 .ruff_cache/
+.mypy_cache/
 __pycache__/
-*.pyc
+*.py[cod]
 *.egg-info/
+build/
+dist/
+.coverage
+coverage.xml
+htmlcov/
+*.log
+*.pid
