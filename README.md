@@ -1,147 +1,154 @@
 # privacy-gateway
 
-Privacy-preserving OpenAI-compatible proxy that sits in front of Headroom and redacts PII and closely related sensitive values before prompts leave the machine.
+A privacy-preserving, OpenAI-compatible proxy that redacts PII and related sensitive
+values before requests reach an upstream provider.
 
-## Architecture
+## Public repository vs. private operations
+
+This repository contains portable source, tests, public templates, and fictional
+examples only. It does **not** document or control any operator's running deployment.
+Do not copy a production service unit, environment file, contextual map, endpoint,
+key, certificate, token, or organization-specific configuration into this repository.
+
+Public portability artifacts:
+
+- `.env.example` — safe local configuration template
+- `examples/context-map.example.json` — fictional contextual-map schema example
+- `deploy/systemd/privacy-gateway-portable.service` — portable systemd template
+
+The existing operator-specific systemd units are retained locally in a live checkout but
+are deliberately ignored and untracked for public publishing. They are not installation
+templates. Do not edit active units or manage services from a source checkout without an
+approved operational change process.
+
+## Capabilities and routes
+
+### Ordinary redaction route
+
+| Route | Purpose |
+| --- | --- |
+| `GET /health` | Liveness check. |
+| `GET /readyz` | Base gateway readiness check. |
+| `POST /v1/responses` | OpenAI Responses-compatible forwarding with request-side secret and generic-PII redaction. |
+
+The ordinary route does not load or apply a contextual map. This keeps a deployment's
+contextual policy isolated from general traffic.
+
+### Optional contextual routes
+
+When a private contextual map is configured and the route's token policy is satisfied,
+these routes apply additional route-scoped pseudonymization. They fail closed with `503`
+if the required map/key policy is unavailable.
+
+| Route | Purpose |
+| --- | --- |
+| `GET /mac/readyz` | Contextual-route readiness check. |
+| `POST /mac/v1/responses` | Contextual protection for OpenAI Responses-compatible requests. |
+| `POST /mac/v1/messages` | Contextual protection for Messages-style requests. |
+| `POST /mac/anthropic/v1/messages` | Contextual protection for native Anthropic Messages-compatible requests. |
+
+The contextual Messages routes are forwarded upstream using the Messages wire endpoint;
+route selection is based on the actual HTTP path rather than a model name.
+
+### Privacy processing behavior
+
+For contextual routes, the outbound request-copy processing order is:
 
 ```text
-Hermes -> privacy-gateway -> Headroom -> upstream provider
+secret redaction → contextual longest-match pseudonymization → generic PII redaction → upstream provider
 ```
 
-## Isolation guardrails
+The gateway leaves local source data alone and transforms only the provider-bound request
+copy. It removes internal `x-privacy-gateway-*` control headers before forwarding.
 
-This project is intentionally isolated from Hermes and Headroom:
+Contextual replacements use opaque, request-scoped tokens. On the return path, the gateway
+restores only tokens emitted for the current request, then applies output DLP to user-visible
+text, including ordinary JSON responses, streaming SSE responses, and refusal text. Unknown,
+malformed, stale, or provider-invented tokens remain literal rather than being restored.
 
-- all application logic lives in this repo
-- Hermes integration is limited to `HERMES_CODEX_BASE_URL` override changes only
-- Headroom integration is limited to upstream forwarding only
-- removal is operational rollback, not source-code surgery
-- default-profile cutover should remain prepared-but-inactive until canary evidence is accepted
+Supported contextual modes are `BASE`, `STANDARD` (the default), and `STRICT`. Select one
+per request with `x-privacy-gateway-pseudonymization-mode`; use a private conversation ID or
+scope header only when the calling application needs stable request scope.
 
-## Current deployment state
+## Local setup
 
-- `privacy-gateway.service`: installed and running on `127.0.0.1:14000`
-- `researcher` profile: **live canary enabled** via user-service drop-in
-- `default` profile: **prepared only**, not cut over yet
-
-## Implemented scope
-
-- `GET /health`
-- `GET /readyz`
-- `POST /v1/responses`
-- request-side redaction for current and near-future payload variants
-- streaming passthrough to Headroom
-- deployable systemd unit
-- rollback runbook in `docs/ROLLBACK.md`
-
-## Redaction coverage
-
-Current redaction focuses on PII and nearby high-sensitivity values:
-
-- `EMAIL_ADDRESS`
-- `PHONE_NUMBER`
-- `CREDIT_CARD`
-- `US_SSN`
-- `IP_ADDRESS`
-- `JWT_TOKEN`
-- `API_SECRET`
-
-Current payload extractor logic redacts text in these common request shapes:
-
-- `instructions`
-- `prompt`
-- root `input` string values
-- `input[*].content[*].text`
-- `messages[*].content` string values
-- `messages[*].content[*].text` text-part arrays
-- other known text-bearing keys such as `query`, `message`, `summary`, `context`, `developer`, `system`, and `user_input`
-
-Non-text protocol fields like `model`, `id`, `role`, `type`, `provider`, and tool identifiers are intentionally not rewritten.
-
-## False-positive / false-negative tuning
-
-Current tuning choices:
-
-- phone recognition requires 10-15 digits to avoid masking short room/build numbers
-- credit-card masking requires a Luhn-valid 13-19 digit candidate
-- IP masking validates each octet range
-- generic API secret matching is prefix-based and length-gated to avoid sweeping ordinary prose
-- partially masked secret fragments such as `ghp_abcd1234...wxyz9876` are also redacted to avoid leaking support-log style token fragments
-
-This keeps the proxy conservative for production canaries while still catching common sensitive material.
-
-## Canary / rollout model
-
-1. run unit + adversarial tests locally
-2. verify `privacy-gateway.service` health on `127.0.0.1:14000`
-3. verify one-shot Hermes CLI with temporary `HERMES_CODEX_BASE_URL`
-4. enable **researcher** canary first
-5. verify researcher service env/runtime
-6. only then consider default-profile cutover
-
-## Local development
+Requires Python 3.11 or newer.
 
 ```bash
-cd /srv/workspaces/Github/privacy-gateway/codebase
+git clone <repository-url> privacy-gateway
+cd privacy-gateway
 python3 -m venv .venv
 . .venv/bin/activate
 pip install -e '.[dev]'
-pytest tests -v
-ruff check .
-python3 -m compileall app scripts
+cp .env.example .env
 ```
+
+Edit the local `.env` with an upstream URL reachable from your machine. Keep it out of
+version control. The application reads environment variables directly, so load it before
+running commands:
+
+```bash
+set -a; . ./.env; set +a
+```
+
+## Configuration
+
+Required configuration is minimal:
+
+- `PRIVACY_GATEWAY_UPSTREAM_BASE_URL` — an OpenAI-compatible upstream base URL
+- `PRIVACY_GATEWAY_HOST` and `PRIVACY_GATEWAY_PORT` — local listener address
+- `PRIVACY_GATEWAY_STRICT` — enables strict redaction when `true`
+
+For contextual pseudonymization, copy `examples/context-map.example.json` to a private
+path outside this checkout and configure `PRIVACY_GATEWAY_CONTEXT_MAP_PATH`. Its values
+must remain fictional in `examples/`; real maps reveal sensitive business context and
+must never be committed, published, or sent to an upstream provider. Set
+`PRIVACY_GATEWAY_PSEUDONYMIZATION_TOKEN_KEY` to a stable, deployment-specific,
+high-entropy secret and never publish it.
 
 ## Run locally
 
 ```bash
-cd /srv/workspaces/Github/privacy-gateway/codebase
 . .venv/bin/activate
-uvicorn app.main:app --host 127.0.0.1 --port 14000
+set -a; . ./.env; set +a
+uvicorn app.main:app --host "$PRIVACY_GATEWAY_HOST" --port "$PRIVACY_GATEWAY_PORT"
 ```
 
-## Installed systemd artifacts
-
-Repo templates:
-
-- `deploy/systemd/privacy-gateway.service`
-- `deploy/systemd/hermes-gateway-default-zz-privacy-gateway.conf`
-- `deploy/systemd/hermes-gateway-researcher-zz-privacy-gateway.conf`
-
-Host state:
-
-- active service: `/etc/systemd/system/privacy-gateway.service`
-- prepared default drop-in: `/etc/systemd/system/hermes-gateway.service.d/zz-privacy-gateway.conf.prepared`
-- active researcher canary: `~/.config/systemd/user/hermes-gateway-researcher.service.d/zz-privacy-gateway.conf`
-
-## Environment
-
-See `.env.example`.
-
-Important variables:
-
-- `PRIVACY_GATEWAY_UPSTREAM_BASE_URL` default: `http://127.0.0.1:18787/v1`
-- `PRIVACY_GATEWAY_HOST` default: `127.0.0.1`
-- `PRIVACY_GATEWAY_PORT` default: `14000`
-
-## Verification commands
+## Test, lint, and compile
 
 ```bash
-cd /srv/workspaces/Github/privacy-gateway/codebase
 . .venv/bin/activate
 pytest tests -v
 ruff check .
 python3 -m compileall app scripts
-python scripts/smoke_responses.py
-curl http://127.0.0.1:14000/health
 ```
 
-## Rollback
+## Install with systemd
 
-See `docs/ROLLBACK.md`.
+1. Create a dedicated, unprivileged service account and install this repository at a
+   host-specific path, such as `/opt/privacy-gateway`.
+2. Create its virtual environment and install the application and dependencies.
+3. Copy `deploy/systemd/privacy-gateway-portable.service` to a private staging location.
+   Replace `CHANGE_ME_SERVICE_USER`, `CHANGE_ME_SERVICE_GROUP`, and every
+   `/opt/privacy-gateway` path with target-host values.
+4. Create `/etc/privacy-gateway/privacy-gateway.env`, restrict it to the service user,
+   and set the required `PRIVACY_GATEWAY_*` variables. Do not store this file in the
+   checkout or publish real endpoints, maps, keys, or tokens.
+5. Have an authorized operator install the reviewed unit, then run `systemctl daemon-reload`
+   and enable/start the newly installed service according to local change procedures.
 
-Short version:
+The systemd template deliberately reads the upstream and other deployment values from a
+private environment file rather than embedding them in the unit.
 
-1. remove the active profile drop-in
-2. restart the affected Hermes gateway service
-3. verify traffic returns directly to Headroom
-4. disable/remove `privacy-gateway.service` if the project is no longer wanted
+## Security and publishing checklist
+
+Before publishing a fork or patch, confirm it contains no:
+
+- real contextual maps or organization/entity aliases
+- API keys, tokens, passwords, private endpoints, or IP addresses
+- private keys, certificates, or keystores
+- local `.env` files, runtime logs, coverage data, or process artifacts
+
+`.gitignore` reduces accidental additions but cannot remove already tracked secrets.
+Review `git status` and repository history before publishing. If a secret was ever
+committed, revoke or rotate it using the relevant operational process.
