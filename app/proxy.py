@@ -35,22 +35,72 @@ SKIP_STRING_KEYS = {
 
 
 def redact_payload(payload: dict[str, Any], redactor: Any) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    return _redact_payload(payload, redactor.redact_text)
+
+
+def redact_payload_secrets(payload: dict[str, Any], redactor: Any) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    return _redact_payload(payload, redactor.redact_secrets)
+
+
+def redact_payload_pii(payload: dict[str, Any], redactor: Any) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    return _redact_payload(payload, redactor.redact_pii)
+
+
+def _redact_payload(payload: dict[str, Any], redact_text: Any) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     rewritten = deepcopy(payload)
     findings: list[dict[str, Any]] = []
-    _walk_and_redact(rewritten, redactor, findings, path=())
+    _walk_text(rewritten, lambda text, path: _redact_text(text, redact_text, findings, path), path=())
     return rewritten, findings
 
 
-def _walk_and_redact(value: Any, redactor: Any, findings: list[dict[str, Any]], path: tuple[str, ...]) -> Any:
+def transform_payload_text(payload: dict[str, Any], transform: Any) -> dict[str, Any]:
+    rewritten = deepcopy(payload)
+    _walk_text(rewritten, transform, path=())
+    return rewritten
+
+
+def rehydrate_response_text(payload: dict[str, Any], token_aliases: dict[str, str], redactor: Any) -> dict[str, Any]:
+    """Rehydrate only request-local tokens in OpenAI Responses output text, then DLP it."""
+    rewritten = deepcopy(payload)
+
+    def transform(text: str) -> str:
+        for token, alias in token_aliases.items():
+            text = text.replace(token, alias)
+        return _result_text(redactor.redact_text(text))
+
+    def walk(value: Any) -> Any:
+        if isinstance(value, dict):
+            for key, item in list(value.items()):
+                if key == "output_text" and isinstance(item, str):
+                    value[key] = transform(item)
+                elif key == "text" and value.get("type") in {"output_text", "text"} and isinstance(item, str):
+                    value[key] = transform(item)
+                elif key == "refusal" and isinstance(item, str):
+                    value[key] = transform(item)
+                else:
+                    value[key] = walk(item)
+        elif isinstance(value, list):
+            for index, item in enumerate(value):
+                value[index] = walk(item)
+        return value
+
+    return walk(rewritten)
+
+
+def _redact_text(text: str, redact_text: Any, findings: list[dict[str, Any]], path: tuple[str, ...]) -> str:
+    result = redact_text(text)
+    findings.extend(_result_items(result, path))
+    return _result_text(result)
+
+
+def _walk_text(value: Any, transform: Any, path: tuple[str, ...]) -> Any:
     if isinstance(value, dict):
         for key, item in list(value.items()):
             next_path = (*path, key)
             if _should_redact_string(key=key, value=item, container=value, path=path):
-                result = redactor.redact_text(item)
-                value[key] = _result_text(result)
-                findings.extend(_result_items(result, next_path))
+                value[key] = transform(item, next_path)
                 continue
-            value[key] = _walk_and_redact(item, redactor, findings, next_path)
+            value[key] = _walk_text(item, transform, next_path)
         return value
 
     if isinstance(value, list):
@@ -58,23 +108,19 @@ def _walk_and_redact(value: Any, redactor: Any, findings: list[dict[str, Any]], 
             for index, item in enumerate(value):
                 text = item.get("text")
                 if isinstance(text, str):
-                    result = redactor.redact_text(text)
-                    item["text"] = _result_text(result)
-                    findings.extend(_result_items(result, (*path, str(index), "text")))
+                    item["text"] = transform(text, (*path, str(index), "text"))
             return value
 
         if _should_redact_string_list(path, value):
             for index, item in enumerate(value):
                 if isinstance(item, str):
-                    result = redactor.redact_text(item)
-                    value[index] = _result_text(result)
-                    findings.extend(_result_items(result, (*path, str(index))))
+                    value[index] = transform(item, (*path, str(index)))
                 else:
-                    value[index] = _walk_and_redact(item, redactor, findings, (*path, str(index)))
+                    value[index] = _walk_text(item, transform, (*path, str(index)))
             return value
 
         for index, item in enumerate(value):
-            value[index] = _walk_and_redact(item, redactor, findings, (*path, str(index)))
+            value[index] = _walk_text(item, transform, (*path, str(index)))
         return value
 
     return value
