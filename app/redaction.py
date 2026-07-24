@@ -14,6 +14,8 @@ DATEISH_PHONE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}(?: \d{1,2})?$")
 JWT_RE = re.compile(r"^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$")
 GENERIC_SECRET_RE = re.compile(r"^(?:sk|rk|pk|xoxb|ghp|github_pat|hf|AIza)[-_A-Za-z0-9]{16,}$")
 PARTIAL_SECRET_RE = re.compile(r"^(?:sk|rk|pk|xoxb|ghp|github_pat|hf|AIza)[-_A-Za-z0-9]{4,}\.\.\.[-_A-Za-z0-9]{4,}$")
+SECRET_ENTITY_TYPES = frozenset({"API_SECRET", "JWT_TOKEN"})
+GENERIC_PII_ENTITY_TYPES = frozenset({"EMAIL_ADDRESS", "PHONE_NUMBER", "CREDIT_CARD", "US_SSN", "IP_ADDRESS"})
 
 
 @dataclass(slots=True)
@@ -74,7 +76,16 @@ class PresidioRedactor:
         self._anonymizer = AnonymizerEngine()
 
     def redact_text(self, text: str) -> RedactionResult:
-        results = self._deduplicate(self._analyze(text))
+        return self._redact(text)
+
+    def redact_secrets(self, text: str) -> RedactionResult:
+        return self._redact(text, SECRET_ENTITY_TYPES)
+
+    def redact_pii(self, text: str) -> RedactionResult:
+        return self._redact(text, GENERIC_PII_ENTITY_TYPES)
+
+    def _redact(self, text: str, entity_types: frozenset[str] | None = None) -> RedactionResult:
+        results = self._deduplicate(self._analyze(text, entity_types))
         operators = {
             item.entity_type: OperatorConfig("replace", {"new_value": f"<{item.entity_type}>"})
             for item in results
@@ -92,10 +103,13 @@ class PresidioRedactor:
         ]
         return RedactionResult(text=anonymized.text, items=items)
 
-    def _analyze(self, text: str) -> list[RecognizerResult]:
+    def _analyze(self, text: str, entity_types: frozenset[str] | None = None) -> list[RecognizerResult]:
         results: list[RecognizerResult] = []
         for recognizer in self._registry.recognizers:
-            results.extend(recognizer.analyze(text=text, entities=[recognizer.supported_entities[0]], nlp_artifacts=None))
+            entity_type = recognizer.supported_entities[0]
+            if entity_types is not None and entity_type not in entity_types:
+                continue
+            results.extend(recognizer.analyze(text=text, entities=[entity_type], nlp_artifacts=None))
         return [item for item in results if self._is_valid_match(item, text)]
 
     def _is_valid_match(self, item: RecognizerResult, text: str) -> bool:
