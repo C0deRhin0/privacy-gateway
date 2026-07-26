@@ -1,0 +1,27 @@
+# Copy this template outside the repository before installation. Replace every
+# CHANGE_ME value and /opt/privacy-gateway path for the target host.
+[Unit]
+Description=Privacy Gateway
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=CHANGE_ME_SERVICE_USER
+Group=CHANGE_ME_SERVICE_GROUP
+WorkingDirectory=/opt/privacy-gateway
+# Create this private file with ownership readable by the service user. It should set
+# PRIVACY_GATEWAY_UPSTREAM_BASE_URL, PRIVACY_GATEWAY_HOST, PRIVACY_GATEWAY_PORT,
+# PRIVACY_GATEWAY_STRICT, and any optional context-map/key settings.
+EnvironmentFile=/etc/privacy-gateway/privacy-gateway.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/privacy-gateway/.venv/bin/uvicorn app.main:app --host ${PRIVACY_GATEWAY_HOST} --port ${PRIVACY_GATEWAY_PORT}
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target
