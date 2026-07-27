@@ -1,0 +1,38 @@
+{
+  "routes": {
+    "/example/v1/responses": {
+      "BASE": [
+        {
+          "entity_type": "ORGANIZATION",
+          "canonical_id": "organization-example-workshop",
+          "aliases": ["Example Workshop", "Workshop Example"],
+          "match": "whole_word"
+        },
+        {
+          "entity_type": "PERSON",
+          "canonical_id": "person-sample-contact",
+          "aliases": ["Sample Contact"],
+          "match": "exact"
+        }
+      ],
+      "STANDARD": [
+        {
+          "entity_type": "PROJECT",
+          "canonical_id": "project-demo-program",
+          "aliases": ["Demo Program"],
+          "match": "whole_word",
+          "nearby_context": ["project", "program"],
+          "context_distance": 24
+        }
+      ],
+      "STRICT": [
+        {
+          "entity_type": "LOCATION",
+          "canonical_id": "location-example-district",
+          "aliases": ["Example District"],
+          "match": "whole_word"
+        }
+      ]
+    }
+  }
+}
