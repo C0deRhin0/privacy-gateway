@@ -1,0 +1,38 @@
+{
+  "routes": {
+    "/mac/v1/responses": {
+      "BASE": [
+        {
+          "entity_type": "ORGANIZATION",
+          "canonical_id": "org-northstar-labs",
+          "aliases": ["Northstar", "Northstar Labs"],
+          "match": "whole_word"
+        },
+        {
+          "entity_type": "PERSON",
+          "canonical_id": "person-dr-quill",
+          "aliases": ["Dr. Quill"],
+          "match": "exact"
+        }
+      ],
+      "STANDARD": [
+        {
+          "entity_type": "PROJECT",
+          "canonical_id": "project-atlas",
+          "aliases": ["Atlas"],
+          "match": "whole_word",
+          "nearby_context": ["project"],
+          "context_distance": 16
+        }
+      ],
+      "STRICT": [
+        {
+          "entity_type": "LOCATION",
+          "canonical_id": "location-harbor-seven",
+          "aliases": ["Harbor Seven", "Harbor"],
+          "match": "whole_word"
+        }
+      ]
+    }
+  }
+}
