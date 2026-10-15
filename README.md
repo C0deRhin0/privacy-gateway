@@ -3,6 +3,30 @@
 A privacy-preserving, OpenAI-compatible proxy that redacts PII and related sensitive
 values before requests reach an upstream provider.
 
+## The provider-bound copy and return path
+
+The ordinary route applies secret and generic-PII redaction. Contextual routes add scoped pseudonymization and restore only tokens issued for the current request.
+
+```mermaid
+flowchart LR
+C["Client request<br/>local source unchanged"]:::source --> S["Secret redaction"]:::process
+    S --> R{"Contextual route?"}:::review
+    R -->|yes| P["Longest-match<br/>pseudonymization"]:::process
+    R -->|ordinary| D["Generic PII redaction"]:::process
+    P --> D
+    D --> U["Configured upstream"]:::store
+    U --> T["Current-request<br/>token restoration"]:::process
+    T --> O["Output DLP<br/>JSON and SSE text"]:::review
+    O --> A["Client response"]:::result
+    classDef source fill:#e0f2fe,stroke:#0284c7,color:#0c4a6e
+    classDef process fill:#ede9fe,stroke:#7c3aed,color:#3b0764
+    classDef store fill:#dcfce7,stroke:#16a34a,color:#14532d
+    classDef review fill:#fef3c7,stroke:#d97706,color:#78350f
+    classDef result fill:#f1f5f9,stroke:#475569,color:#0f172a
+```
+
+Start with [local setup](#local-setup), use the [fictional context map](examples/context-map.example.json) to understand the schema, and read [rollback notes](docs/ROLLBACK.md) before adapting a deployment. Contextual routes fail closed when their map/key policy is unavailable.
+
 ## Public repository vs. private operations
 
 This repository contains portable source, tests, public templates, and fictional
