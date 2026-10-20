@@ -176,3 +176,11 @@ Before publishing a fork or patch, confirm it contains no:
 `.gitignore` reduces accidental additions but cannot remove already tracked secrets.
 Review `git status` and repository history before publishing. If a secret was ever
 committed, revoke or rotate it using the relevant operational process.
+
+## Captures
+
+Running API documentation. No upstream provider request sent.
+
+![Running API · generated endpoint documentation; no provider request sent](docs/screenshots/api.webp)
+
+Full capture descriptions and provenance: [captures.json](docs/screenshots/captures.json).

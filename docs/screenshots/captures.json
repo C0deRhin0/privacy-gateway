@@ -1,0 +1,14 @@
+{
+  "project": "Privacy Gateway",
+  "kind": "Interface",
+  "note": "Running API documentation. No upstream provider request sent.",
+  "capturedAt": "2026-10-23T05:43:26.868Z",
+  "screens": [
+    {
+      "file": "api.webp",
+      "caption": "Running API · generated endpoint documentation; no provider request sent",
+      "width": 1440,
+      "height": 1000
+    }
+  ]
+}
